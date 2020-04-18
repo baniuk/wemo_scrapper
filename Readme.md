@@ -11,3 +11,9 @@ python -m wemo_scrapper -d start --address 192.168.4.6 -p 8080
 # one time scrap - export to json
 python -m wemo_scrapper --quiet onescrap --address 192.168.4.6
 ```
+
+### Docker
+
+```bash
+docker run --rm -it -p 8080:8080 test -d start -a 192.168.4.6
+```

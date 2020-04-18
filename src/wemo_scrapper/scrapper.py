@@ -56,8 +56,8 @@ def scrap(address: str) -> Optional[WemoResponse]:
 
 
 @cli.command()
-@click.option('--address', required=True, type=str, help='Wemo IP address')
-@click.option('-p', '--port', type=int, required=True, help='Prometheus port')
+@click.option('-a', '--address', required=True, type=str, help='Wemo IP address')
+@click.option('-p', '--port', type=int, default=8080, help='Prometheus port (default 8080)')
 def start(address: str, port: int) -> None:
     """Start service."""
     start_http_server(port)
