@@ -15,7 +15,7 @@ python -m wemo_scrapper --quiet onescrap --address 192.168.4.6
 ### Docker
 
 ```bash
-docker run --rm -it -p 8080:8080 test -d start -a 192.168.4.6
+docker run --rm -it -p 8080:8080 baniuk/wemo-scrapper -d start -a <wemo_ip>
 ```
 
 # License
