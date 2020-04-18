@@ -17,3 +17,6 @@ python -m wemo_scrapper --quiet onescrap --address 192.168.4.6
 ```bash
 docker run --rm -it -p 8080:8080 test -d start -a 192.168.4.6
 ```
+
+# License
+The code in pywemo/ouimeaux_device is written and copyright by Ian McCracken and released under the BSD license. The rest is released under the MIT license.
