@@ -1,13 +1,14 @@
 """Simple Wemo power scrapper."""
+import datetime
 import logging
-import click
-import time
 import signal
 import threading
+import time
+
+import click
+from prometheus_client import REGISTRY, Gauge, start_http_server
+
 import pywemo
-from prometheus_client import Gauge
-import datetime
-from prometheus_client import start_http_server, REGISTRY
 
 from .datatypes import WemoResponse
 from .exporter import CustomWemoExporter

@@ -1,10 +1,12 @@
 """Prometheus exporter."""
 import logging
+from typing import Callable
+
 from prometheus_client.core import GaugeMetricFamily
 
-from .datatypes import WemoResponse
-from typing import Callable
 import dataclasses
+
+from .datatypes import WemoResponse
 
 LOGGER = logging.getLogger(__name__)
 class CustomWemoExporter:
