@@ -1,4 +1,7 @@
 mypy
-pytest
+lxml
+pylint
 pip-tools
 autopep8
+pydocstyle
+typing-extensions

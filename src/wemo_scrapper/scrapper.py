@@ -1,14 +1,12 @@
 """Simple Wemo power scrapper."""
 import datetime
 import logging
-import signal
-import threading
 import time
+from typing import Optional
 
 import click
-from prometheus_client import REGISTRY, Gauge, start_http_server
-
 import pywemo
+from prometheus_client import REGISTRY, start_http_server
 
 from .datatypes import WemoResponse
 from .exporter import CustomWemoExporter
@@ -19,13 +17,12 @@ LOGGER = logging.getLogger('wemo_scrapper')
 
 _ONE_DAY_IN_SECONDS = 24*60*60
 
+
 @click.group()
 @click.option('-d', '--debug', count=True, help='Verbosity: d:INFO, dd:DEBUG (default WARN)')
 @click.option('--quiet/--no-quiet', default=False, help='Mute all logs')
-def cli(debug:int, quiet:bool):
-    """
-    Wemo power statistics to prometheus exporter.
-    """
+def cli(debug: int, quiet: bool) -> None:
+    """Wemo power statistics to prometheus exporter."""
     if quiet:
         LOGGER.setLevel(logging.ERROR)
     elif debug == 1:
@@ -34,7 +31,9 @@ def cli(debug:int, quiet:bool):
         LOGGER.setLevel(logging.DEBUG)
     LOGGER.debug('Debug mode enabled')
 
-def scrap(address:str):
+
+def scrap(address: str) -> Optional[WemoResponse]:
+    """Wemo scrapper."""
     port = pywemo.ouimeaux_device.probe_wemo(address)
     if port is None:
         LOGGER.warning('Device is not available')
@@ -55,16 +54,14 @@ def scrap(address:str):
     LOGGER.info('url: %s, data: %s', url, ret)
     return ret
 
+
 @cli.command()
 @click.option('--address', required=True, type=str, help='Wemo IP address')
 @click.option('-p', '--port', type=int, required=True, help='Prometheus port')
-def start(address:str, port:int):
-    """
-    Start service.
-    """
-
+def start(address: str, port: int) -> None:
+    """Start service."""
     start_http_server(port)
-    LOGGER.info('Started prometheus server at port %s',port)
+    LOGGER.info('Started prometheus server at port %s', port)
     REGISTRY.register(CustomWemoExporter(lambda: scrap(address)))
 
     try:
@@ -72,13 +69,13 @@ def start(address:str, port:int):
             time.sleep(_ONE_DAY_IN_SECONDS)
     except KeyboardInterrupt:
         LOGGER.info('Exiting')
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         LOGGER.exception('Finishing with exception')
 
 
 @cli.command()
 @click.option('-a', '--address', required=True, type=str, help='Wemo IP address')
-def onescrap(address:str):
+def onescrap(address: str) -> None:
     """
     One time scrap.
 
@@ -86,6 +83,6 @@ def onescrap(address:str):
     """
     ret = scrap(address)
     if ret:
-        print(ret.to_json())
+        print(ret.to_json())  # type: ignore[attr-defined] # pylint: disable=no-member
     else:
         print('{}')

@@ -2,4 +2,4 @@
 
 from .scrapper import cli
 
-cli()
+cli()  # pylint: disable=no-value-for-parameter

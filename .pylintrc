@@ -1,0 +1,27 @@
+[MASTER]
+
+[MESSAGES CONTROL]
+
+disable=fixme
+
+[TYPECHECK]
+
+[REPORTS]
+
+reports=yes
+
+[FORMAT]
+
+max-line-length=120
+
+[DESIGN]
+
+# Maximum number of arguments for function / method
+max-args=6
+# Maximum number of attributes for class / dataclass
+max-attributes=12
+
+[SIMILARITIES]
+
+# Minimum lines number of a similarity.
+min-similarity-lines=10
