@@ -1,0 +1,4 @@
+prometheus_client
+click
+dataclasses-json
+git+https://github.com/pavoni/pywemo.git@295a8f35584ba79a7cfe98021792d87647ff8a2d
