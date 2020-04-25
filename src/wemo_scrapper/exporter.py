@@ -2,7 +2,7 @@
 import logging
 from typing import Callable, Optional
 
-from prometheus_client.core import GaugeMetricFamily, Metric
+from prometheus_client.core import GaugeMetricFamily, Metric, CounterMetricFamily
 
 from .datatypes import WemoResponse
 
@@ -31,3 +31,7 @@ class CustomWemoExporter:  # pylint: disable=too-few-public-methods
                          timestamp=ret.collection_time.timestamp())
 
         yield gauge
+
+        counter = CounterMetricFamily('wemo_power_usage', 'Today power consumption', labels=['address'])
+        counter.add_metric([ret.address], ret.today_kwh, timestamp=ret.collection_time.timestamp())
+        yield counter

@@ -1,14 +1,18 @@
 """Simple Wemo power scrapper."""
 import datetime
 import logging
+import signal
+import sys
 import threading
 import time
+from types import FrameType
 from typing import Optional
 
 import click
 import pywemo
 from prometheus_client import REGISTRY, start_http_server
 from pywemo.ouimeaux_device.api.service import ActionException
+from requests.exceptions import ConnectionError as RequestsConnectionError
 from tenacity import (RetryError, before_sleep_log, retry, retry_if_exception,
                       stop_after_attempt, wait_exponential)
 
@@ -19,41 +23,59 @@ logging.basicConfig(level=logging.WARN, format='%(asctime)s - %(name)s - %(level
 
 LOGGER = logging.getLogger('wemo_scrapper')
 
-_ONE_DAY_IN_SECONDS = 24*60*60
+_ONE_HOUR_IN_SECONDS = 60*60
 
 
 class DeviceNotAvailable(Exception):
-    pass
+    """Device not available exception."""
+
+    ...
 
 
 def _predicate(exc: Exception) -> bool:
-    return isinstance(exc, (DeviceNotAvailable, ActionException))
+    return isinstance(exc, (DeviceNotAvailable, ActionException, RequestsConnectionError))
 
 
-class Connect:
+class WemoConnector:
+    """
+    Wemo device connector.
+
+    Connect and produce metrics. Can reconnect if connection is lost.
+    """
 
     def __init__(self, address: str):
         self.address = address
         self.device = None
-        self._reconnect_thread = None
+        self._reconnect_thread: Optional[threading.Thread] = None
         self._reconnecting_finished = threading.Event()
         self._is_dead = threading.Event()
 
     def connect(self, block: bool = True) -> None:
+        """
+        Connect to the device.
+
+        In block mode this method blocks until connection is established. Connection process runs in thread
+        and current status of the device can be read from properties `is_working` and `is_ready`.
+
+        Args:
+            block: If True this command will block until connection is established.
+
+        """
         if not (self._reconnect_thread and self._reconnect_thread.is_alive()):
-            self._reconnect_thread = threading.Thread(target=self.threaded_connect, daemon=True)
+            self._reconnect_thread = threading.Thread(target=self._threaded_connect, daemon=True)
             self._reconnect_thread.start()
             if block:
                 self._reconnecting_finished.wait()
         else:
             LOGGER.warning('Connection already in progress.')
 
-    def threaded_connect(self):
+    def _threaded_connect(self) -> None:
+        """Connecting run in thread."""
         @retry(stop=stop_after_attempt(2),  # type: ignore[misc]
                wait=wait_exponential(min=10, max=60*60),
                retry=retry_if_exception(_predicate),
                before_sleep=before_sleep_log(LOGGER, logging.WARNING))
-        def _connect():
+        def _connect() -> None:
             self._reconnecting_finished.clear()
             LOGGER.debug('Trying to connect to %s', self.address)
             port = pywemo.ouimeaux_device.probe_wemo(self.address)
@@ -70,27 +92,82 @@ class Connect:
             _connect()
         except RetryError:
             self._is_dead.set()
+            self._reconnecting_finished.set()
             LOGGER.error(  # pylint: disable=maybe-no-member;
-                "Reconnecting failed. Some stats %s", connect.connect.retry.statistics)  # type: ignore[attr-defined]
+                "Reconnecting failed. Some stats %s", _connect.retry.statistics)
 
-    def update(self):
+    def update(self) -> None:
+        """
+        Update Wemo internal state.
+
+        If connection with device is lost it will try to reconnect setting `is_ready` to False.
+
+        """
         try:
-            if self.device:
+            if self.is_ready:
                 self.device.update_insight_params()
-            # elif not self._reconnect_thread.is_alive():
-            #     self._reconnect_thread.run()
+            else:
+                logging.info("Device is not ready and cannot be updated.")
         except ActionException as aexp:
             self.device = None
             logging.warning('Device is not available: %s, reconnecting in background', aexp)
             self.connect(block=False)
 
+    def scrap(self) -> Optional[WemoResponse]:
+        """
+        Wemo scrapper.
+
+        Update and read device state.
+
+        Returns:
+            `WemoResponse` or None if device is not ready or dead.
+
+        """
+        ret: Optional[WemoResponse]
+        self.update()
+        if self.is_ready:
+            ret = WemoResponse(today_kwh=self.device.today_kwh,
+                               current_power=self.device.current_power,
+                               today_on_time=self.device.today_on_time,
+                               on_for=self.device.on_for,
+                               today_standby_time=self.device.today_standby_time,
+                               device_type=self.device.device_type,
+                               address=self.address,
+                               collection_time=datetime.datetime.utcnow())
+
+            LOGGER.info('url: %s, data: %s', self.address, ret)
+        else:
+            ret = None
+
+        return ret
+
     @property
     def is_ready(self) -> bool:
+        """
+        Return status of the device.
+
+        Returns:
+            True if device is connected.
+            False if device is disconnected but reconnecting is in progress.
+
+        """
         return bool(self.device)
 
     @property
     def is_working(self) -> bool:
+        """
+        Return status of reconnecting.
+
+        Returns:
+            True if device is working.
+            False if device is in unrecoverable bad state.
+
+        """
         return not self._is_dead.is_set()
+
+    def wait_as_alive(self) -> None:
+        """Block as long as device is alive."""
+        self._is_dead.wait()
 
 
 @click.group()
@@ -107,41 +184,38 @@ def cli(debug: int, quiet: bool) -> None:
     LOGGER.debug('Debug mode enabled')
 
 
-def scrap(address: str) -> Optional[WemoResponse]:
-    """Wemo scrapper."""
-    port = pywemo.ouimeaux_device.probe_wemo(address)
-    if port is None:
-        LOGGER.warning('Device is not available')
-        return None
-    url = 'http://%s:%i/setup.xml' % (address, port)
-    device = pywemo.discovery.device_from_description(url, None)
-    device.update_insight_params()
-
-    ret = WemoResponse(today_kwh=device.today_kwh,
-                       current_power=device.current_power,
-                       today_on_time=device.today_on_time,
-                       on_for=device.on_for,
-                       today_standby_time=device.today_standby_time,
-                       device_type=device.device_type,
-                       address=address,
-                       collection_time=datetime.datetime.utcnow())
-
-    LOGGER.info('url: %s, data: %s', url, ret)
-    return ret
-
-
 @cli.command()
 @click.option('-a', '--address', required=True, type=str, help='Wemo IP address')
 @click.option('-p', '--port', type=int, default=8080, help='Prometheus port (default 8080)')
 def start(address: str, port: int) -> None:
-    """Start service."""
+    """
+    Start service.
+
+    The service connects to the Wemo device and refresh metrics on each
+    prometheus request. If connection is lost it will be detected on next
+    prometheus request. The service will be trying to reconnect infinitely in
+    non-blocking way, prometheus requests are served as normal but no metrics
+    are returned.
+    """
     start_http_server(port)
     LOGGER.info('Started prometheus server at port %s', port)
-    REGISTRY.register(CustomWemoExporter(lambda: scrap(address)))
+    connect = WemoConnector(address)
+    connect.connect()
+    if connect.is_working:
+        REGISTRY.register(CustomWemoExporter(connect.scrap))
+    else:
+        logging.error("Device is not working. Cannot register scrapper.")
+        sys.exit(1)
+
+    def shutdown(sig: int, frame: FrameType) -> None:  # pylint: disable=unused-argument
+        LOGGER.info("Received exit signal %s", signal.Signals(sig).name)  # pylint: disable=no-member
+        connect._is_dead.set()  # pylint: disable=protected-access
+
+    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGQUIT):
+        signal.signal(sig, shutdown)
 
     try:
-        while True:
-            time.sleep(_ONE_DAY_IN_SECONDS)
+        connect.wait_as_alive()
     except KeyboardInterrupt:
         LOGGER.info('Exiting')
     except Exception:  # pylint: disable=broad-except
@@ -150,33 +224,31 @@ def start(address: str, port: int) -> None:
 
 @cli.command()
 @click.option('-a', '--address', required=True, type=str, help='Wemo IP address')
-def onescrap(address: str) -> None:
+@click.option('-f', '--frequency', type=float, default=0.5, help="Sampling frequency [Hz]. If set to 0 device is " +
+              "queried only once. Defaults to 0.5 Hz")
+def scrap(address: str, frequency: float) -> None:
     """
-    One time scrap.
+    Scrap device and output json response.
 
     Return json representation of Wemo data or empty json if device is not available
     """
-    ret = scrap(address)
-    if ret:
-        print(ret.to_json())  # type: ignore[attr-defined] # pylint: disable=no-member
-    else:
-        print('{}')
-
-
-@cli.command()
-@click.option('-a', '--address', required=True, type=str, help='Wemo IP address')
-@click.option('-f', '--frequency', type=float, default=1.0, help='Sampling frequency [Hz]')
-def loopscrap(address: str, frequency: float) -> None:
     try:
-        connect = Connect(address)
+        connect = WemoConnector(address)
         connect.connect()
         while connect.is_working:
             if connect.is_ready:
-                connect.update()
-                LOGGER.debug(connect.device)
+                ret = connect.scrap()
+                if ret:
+                    print(ret.to_json())  # type: ignore[attr-defined] # pylint: disable=no-member
+                else:
+                    print('{}')
             else:
-                LOGGER.debug('Device is not ready')
-            time.sleep(1.0/frequency)
-    except RetryError:
-        LOGGER.error(  # pylint: disable=maybe-no-member;
-            "Some stats %s", connect.connect.retry.statistics)  # type: ignore[attr-defined]
+                logging.warning("Device is not ready.")
+            if frequency == 0:
+                sys.exit(0)
+            else:
+                time.sleep(1.0/frequency)
+    except KeyboardInterrupt:
+        LOGGER.info('Exiting')
+    except Exception:  # pylint: disable=broad-except
+        logging.exception('Finishing with exception')
