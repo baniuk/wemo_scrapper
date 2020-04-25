@@ -14,7 +14,7 @@ from prometheus_client import REGISTRY, start_http_server
 from pywemo.ouimeaux_device.api.service import ActionException
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from tenacity import (RetryError, before_sleep_log, retry, retry_if_exception,
-                      stop_after_attempt, wait_exponential)
+                      wait_exponential)
 
 from .datatypes import WemoResponse
 from .exporter import CustomWemoExporter
@@ -70,9 +70,9 @@ class WemoConnector:
             LOGGER.warning('Connection already in progress.')
 
     def _threaded_connect(self) -> None:
-        """Connecting run in thread."""
-        @retry(stop=stop_after_attempt(2),  # type: ignore[misc]
-               wait=wait_exponential(min=10, max=60*60),
+        """Connect to Wemo in thread."""
+        # wait from 10s to max 10min between connections, repeat infinitely
+        @retry(wait=wait_exponential(min=10, max=60*10),  # type: ignore[misc]
                retry=retry_if_exception(_predicate),
                before_sleep=before_sleep_log(LOGGER, logging.WARNING))
         def _connect() -> None:
