@@ -13,6 +13,7 @@ import pywemo
 from prometheus_client import REGISTRY, start_http_server
 from pywemo.ouimeaux_device.api.service import ActionException
 from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import ReadTimeout
 from tenacity import (RetryError, before_sleep_log, retry, retry_if_exception,
                       wait_exponential)
 
@@ -33,7 +34,7 @@ class DeviceNotAvailable(Exception):
 
 
 def _predicate(exc: Exception) -> bool:
-    return isinstance(exc, (DeviceNotAvailable, ActionException, RequestsConnectionError))
+    return isinstance(exc, (DeviceNotAvailable, ActionException, RequestsConnectionError, ReadTimeout))
 
 
 class WemoConnector:
