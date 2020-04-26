@@ -78,7 +78,7 @@ class WemoConnector:
                before_sleep=before_sleep_log(LOGGER, logging.WARNING))
         def _connect() -> None:
             self._reconnecting_finished.clear()
-            LOGGER.debug('Trying to connect to %s', self.address)
+            LOGGER.info('Trying to connect to %s', self.address)
             port = pywemo.ouimeaux_device.probe_wemo(self.address)
             if port is None:
                 LOGGER.warning('Device %s is not available', self.address)
@@ -136,7 +136,7 @@ class WemoConnector:
                                address=self.address,
                                collection_time=datetime.datetime.utcnow())
 
-            LOGGER.info('url: %s, data: %s', self.address, ret)
+            LOGGER.debug('url: %s, data: %s', self.address, ret)
         else:
             ret = None
 
@@ -172,16 +172,16 @@ class WemoConnector:
 
 
 @click.group()
-@click.option('-d', '--debug', count=True, help='Verbosity: d:INFO, dd:DEBUG (default WARN)')
+@click.option('-d', '--debug', count=True, help='Verbosity: d:DEBUG (default INFO)')
 @click.option('--quiet/--no-quiet', default=False, help='Mute all logs')
 def cli(debug: int, quiet: bool) -> None:
     """Wemo power statistics to prometheus exporter."""
     if quiet:
         LOGGER.setLevel(logging.ERROR)
-    elif debug == 1:
-        LOGGER.setLevel(logging.INFO)
-    elif debug > 1:
+    elif debug >= 1:
         LOGGER.setLevel(logging.DEBUG)
+    else:
+        LOGGER.setLevel(logging.INFO)
     LOGGER.debug('Debug mode enabled')
 
 
