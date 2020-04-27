@@ -73,7 +73,7 @@ class WemoConnector:
     def _threaded_connect(self) -> None:
         """Connect to Wemo in thread."""
         # wait from 10s to max 10min between connections, repeat infinitely
-        @retry(wait=wait_exponential(min=10, max=60*10),  # type: ignore[misc]
+        @retry(wait=wait_exponential(min=10, max=60*5),  # type: ignore[misc]
                retry=retry_if_exception(_predicate),
                before_sleep=before_sleep_log(LOGGER, logging.WARNING))
         def _connect() -> None:
